@@ -60,17 +60,19 @@ windowName = input("Enter the name of the window you want to check: ")
 
 # If the user didn't input anything, print that we're exiting and exit
 if windowName == "":
-    print("No window name entered, assuming Velheim.")
-    windowName = "Velheim"
+    print("No window name entered, assuming default.")
+    windowName = "718/925"
 
 # Make an empty list to store the names of the windows
 windowList = []
+timeSinceLastFocused = []
 
 # Scan all windows and add the ones that match the input to the list
 def winEnumHandler(hwnd, ctx):
     if win32gui.IsWindowVisible(hwnd):
         if windowName.lower() in win32gui.GetWindowText(hwnd).lower():
             windowList.append(win32gui.GetWindowText(hwnd))
+            timeSinceLastFocused.append(0)
 win32gui.EnumWindows(winEnumHandler, None)
 
 # Print all the windows we found that match input
@@ -85,9 +87,10 @@ if len(windowList) == 0:
 
 # Scan every 1 second by default, but can be anything. The tiny pixel scan alerts take ~0.05 seconds to run
 SCAN_INTERVAL = 0.1
-
+timeElapsed = 0
 # If panic key is not pressed, loop every scan interval and check if the image is on screen
 while True:
+    startTime = time.time()
     # Iterate through all the found windows
     for i in range(0, len(windowList)):
         # Get the current window's image
@@ -99,7 +102,23 @@ while True:
         # Check if the window is focused
         if win32gui.GetForegroundWindow() == window:
             # Skip if it's focused
+            timeSinceLastFocused[i] = 0
             continue
+        
+        # If it's not focused, increment the time since it was focused. Pretty sure this is wrong but it doesn't really matter.
+        timeSinceLastFocused[i] += timeElapsed + SCAN_INTERVAL
+        if debugging:
+            print("Time since last focused for index " + str(i) + ": " + str(timeSinceLastFocused[i]), flush=True)
+
+        # Get a random value between 350 and 400
+        randVal = random.randint(250, 450)
+        alertPosition = (windowPos[0] + 25, windowPos[1] + randVal)
+
+        # If it's been more than ~180 seconds since the window was focused, alert AFK
+        if timeSinceLastFocused[i] > 180:
+            alertWindow(win32gui.FindWindow(None, currentWindow), "AFK", alertPosition)
+            continue
+
 
         # windowRegion = region_grabber(windowPos)
         hp = region_grabber((windowPos[2] - 225, windowPos[1] + 82, windowPos[2] - 195, windowPos[1] + 98))
@@ -110,9 +129,6 @@ while True:
             Image.frombytes('RGB', hp.size, hp.bgra, 'raw', 'BGRX').save("debug/hp" + str(i) + ".png")
             Image.frombytes('RGB', prayer.size, prayer.bgra, 'raw', 'BGRX').save("debug/prayer" + str(i) + ".png")
 
-        # Get a random value between 350 and 400
-        randVal = random.randint(250, 450)
-        alertPosition = (windowPos[0] + 25, windowPos[1] + randVal)
         alerted = False
         # Iterate through all the pixels in hp to determine if there are any red
         for x in range(0, hp.size[0]):
@@ -139,5 +155,7 @@ while True:
                 
     if debugging:
         exit()
+
+    timeElapsed = time.time() - startTime
 
     time.sleep(SCAN_INTERVAL)
