@@ -92,8 +92,6 @@ while True:
     for i in range(0, len(windowList)):
         # Get the current window's image
         currentWindow = windowList[i]
-        # Print that we're scanning this window
-        print("Scanning window: " + currentWindow)
 
         # Get window's position and size
         window = win32gui.FindWindow(None, currentWindow)
