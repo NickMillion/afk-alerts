@@ -11,7 +11,7 @@ debugging = False
 
 # This is the function that will always be called if an alert is detected. It's kinda janky.
 # Would be fantastic to have it run on a separate thread, based on what I've read? Unsure how to implement that currently.
-def alertWindow(hwnd, alert, position=(0, 0)):    
+def alertWindow(hwnd, alert = "", position=(0, 0), windowSize=(700, 700)):    
     # Create a new window
     window = tk.Tk()
     window.title(alert)
@@ -26,7 +26,7 @@ def alertWindow(hwnd, alert, position=(0, 0)):
 
     # Set the window's position
     window.geometry("+%d+%d" % (position[0], position[1]))
-    window.geometry("700x700")
+    window.geometry(str(windowSize[0]) + "x" + str(windowSize[1]))
     window.configure(bg="blue")
     window.iconbitmap(notificationIcon)
     # Make the window always on top
@@ -44,7 +44,12 @@ def alertWindow(hwnd, alert, position=(0, 0)):
 
     # Add a label to the window with a randomly selected alert color
     selectedColor = random.choice(alertColors)
-    label = tk.Label(window, text=alert, font=("Arial Bold", 78), bg="blue", fg=selectedColor)
+    # Text size must be at least 64, divide by the length of the alert to get the size
+    # This will make it take up basically the entire window
+    textSize = int(windowSize[0] / len(alert))
+    if textSize < 64:
+        textSize = 64
+    label = tk.Label(window, text=alert, font=("Arial Bold", textSize), bg="blue", fg=selectedColor)
     label.pack()
 
 
@@ -99,24 +104,22 @@ while True:
         # Get window's position and size
         window = win32gui.FindWindow(None, currentWindow)
         windowPos = win32gui.GetWindowRect(window)
+        windowSize = (windowPos[2] - windowPos[0], windowPos[3] - windowPos[1])
         # Check if the window is focused
         if win32gui.GetForegroundWindow() == window:
-            # Skip if it's focused
             timeSinceLastFocused[i] = 0
-            continue
         
         # If it's not focused, increment the time since it was focused. Pretty sure this is wrong but it doesn't really matter.
         timeSinceLastFocused[i] += timeElapsed + SCAN_INTERVAL
         if debugging:
             print("Time since last focused for index " + str(i) + ": " + str(timeSinceLastFocused[i]), flush=True)
 
-        # Get a random value between 350 and 400
-        randVal = random.randint(250, 450)
-        alertPosition = (windowPos[0] + 25, windowPos[1] + randVal)
+        # Put the alertPosition in the center of the window
+        alertPosition = (windowPos[0], windowPos[1] + (windowSize[1] / 2))
 
         # If it's been more than ~180 seconds since the window was focused, alert AFK
         if timeSinceLastFocused[i] > 180:
-            alertWindow(win32gui.FindWindow(None, currentWindow), "AFK", alertPosition)
+            alertWindow(win32gui.FindWindow(None, currentWindow), "AFK", alertPosition, windowSize)
             continue
 
 
@@ -137,7 +140,7 @@ while True:
                 pixel = hp.pixel(x, y)
                 # If the pixel is red, alert
                 if pixel[0] > 200 and pixel[1] < 100 and pixel[2] < 100:
-                    alertWindow(win32gui.FindWindow(None, currentWindow), "HP LOW", alertPosition)
+                    alertWindow(win32gui.FindWindow(None, currentWindow), "HP LOW", alertPosition, windowSize)
                     alerted = True
                     break
             if alerted:
@@ -147,7 +150,7 @@ while True:
             for y in range(0, prayer.size[1]):
                 pixel = prayer.pixel(x, y)
                 if pixel[0] > 200 and pixel[1] < 100 and pixel[2] < 100:
-                    alertWindow(win32gui.FindWindow(None, currentWindow), "PRAYER LOW", alertPosition)
+                    alertWindow(win32gui.FindWindow(None, currentWindow), "PRAYER LOW", alertPosition, windowSize)
                     alerted = True
                     break
             if alerted:
