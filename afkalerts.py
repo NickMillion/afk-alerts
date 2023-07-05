@@ -56,13 +56,12 @@ def alertWindow(hwnd, alert, position=(0, 0)):
 print("AFK Alerts is running...")
 
 # We want the user to input part of the name of the window they want to check
-# windowName = input("Enter the name of the window you want to check: ")
-windowName = "Velheim"
+windowName = input("Enter the name of the window you want to check: ")
 
 # If the user didn't input anything, print that we're exiting and exit
 if windowName == "":
-    print("No window name entered, exiting...")
-    exit()
+    print("No window name entered, assuming Velheim.")
+    windowName = "Velheim"
 
 # Make an empty list to store the names of the windows
 windowList = []
@@ -78,6 +77,11 @@ win32gui.EnumWindows(winEnumHandler, None)
 print("Found " + str(len(windowList)) + " windows that match input.", flush=True)
 # Print them all
 print(windowList)
+
+# If we didn't find any windows, exit
+if len(windowList) == 0:
+    print("No windows found, exiting.")
+    exit()
 
 # Scan every 1 second by default, but can be anything. The tiny pixel scan alerts take ~0.05 seconds to run
 SCAN_INTERVAL = 0.1
