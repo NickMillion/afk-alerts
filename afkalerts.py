@@ -1,5 +1,3 @@
-from python_imagesearch.imagesearch import imagesearcharea
-from python_imagesearch.imagesearch import imagesearch
 from python_imagesearch.imagesearch import region_grabber
 import tkinter as tk
 import win32gui
@@ -12,6 +10,7 @@ notificationIcon = "mellon.ico"
 debugging = False
 
 # This is the function that will always be called if an alert is detected. It's kinda janky.
+# Would be fantastic to have it run on a separate thread, based on what I've read? Unsure how to implement that currently.
 def alertWindow(hwnd, alert, position=(0, 0)):    
     # Create a new window
     window = tk.Tk()
@@ -49,8 +48,8 @@ def alertWindow(hwnd, alert, position=(0, 0)):
     label.pack()
 
 
-    # Run the window loop for 5 seconds
-    window.after(250, window.destroy)
+    # Run the window loop for 500 ms
+    window.after(500, window.destroy)
     window.mainloop()
 
 # Print that we're running
@@ -81,16 +80,10 @@ print("Found " + str(len(windowList)) + " windows that match input.", flush=True
 print(windowList)
 
 # Scan every 1 second by default, but can be anything. The tiny pixel scan alerts take ~0.05 seconds to run
-SCAN_INTERVAL = 0.05
+SCAN_INTERVAL = 0.1
 
 # If panic key is not pressed, loop every scan interval and check if the image is on screen
 while True:
-    # Print that we are scanning
-    print("Scanning...")
-
-    timeStarted = time.time()
-    # We do everything here
-
     # Iterate through all the found windows
     for i in range(0, len(windowList)):
         # Get the current window's image
@@ -144,6 +137,5 @@ while True:
                 
     if debugging:
         exit()
-    # Print how long it took to scan; this includes the window live time
-    # print("Scanned in " + str(time.time() - timeStarted) + " seconds.", flush=True)
+
     time.sleep(SCAN_INTERVAL)
