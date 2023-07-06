@@ -4,6 +4,7 @@ import win32gui
 import time
 from PIL import Image # Only used if debugging is on to take screenshot of scanned regions
 import random
+from playsound import playsound # Make sure you're using version 1.2.2 or it'll error out
 
 # How often to scan the windows, in seconds. Should probably be above 0.05 but can otherwise be anything.
 SCAN_INTERVAL = 0.1
@@ -12,13 +13,16 @@ DEBUGGING = False
 # How many seconds before printing the "Running for x minutes." message
 TIME_BETWEEN_PRINTS = 60
 # How long to keep the alert visible, in ms
-ALERT_DURATION = 500
+ALERT_DURATION = 750
 # Default window name
 DEFAULT_WINDOW_NAME = "718/925"
+# Audio files. These WILL play at whatever volume your python console is set to, so be careful.
+MAJOR_ALERT = "major_alert.mp3"
+MINOR_ALERT = "minor_alert.mp3"
 
 # This is the function that will always be called if an alert is detected. It's kinda janky but works for our purposes.
 # Would be fantastic to have it run on a separate thread, based on what I've read? Unsure how to implement that currently.
-def alertWindow(hwnd, alert = "", position=(0, 0), windowSize=(700, 700)):    
+def alertWindow(hwnd, alert = "", position=(0, 0), windowSize=(700, 700), alert_audio=MAJOR_ALERT):    
     # Create a new window
     window = tk.Tk()
     window.title(alert)
@@ -62,13 +66,16 @@ def alertWindow(hwnd, alert = "", position=(0, 0), windowSize=(700, 700)):
         textSize = 64
 
     # Finally, add the label
-    label = tk.Label(window, text=alert, font=("Arial Bold", textSize), bg="black", fg=selectedColor)
-    label.pack()
+    tk.Label(window, text=alert, font=("Arial Bold", textSize), bg="black", fg=selectedColor).pack()
 
+    # Play audio
+    if alert_audio != "":
+        playsound(alert_audio, block=False)
 
     # Run the window loop for 500 ms
     window.after(ALERT_DURATION, window.destroy)
     window.mainloop()
+
 
     print("Alerted " + alert + " for window " + str(hwnd), flush=True)
 
@@ -141,7 +148,7 @@ while True:
 
         # If it's been more than ~4 mins since the window was focused, alert AFK. This value is in seconds
         if timeSinceLastFocused[i] - time.time() > 240:
-            alertWindow(win32gui.FindWindow(None, currentWindow), "AFK", alertPosition, windowSize)
+            alertWindow(win32gui.FindWindow(None, currentWindow), "AFK", alertPosition, windowSize, MINOR_ALERT)
             continue
 
         # Grab the regions of the screen that we want to check. These are hardcoded.
@@ -165,7 +172,7 @@ while True:
                 pixel = hp.pixel(x, y)
                 # If the pixel is red, alert
                 if pixel[0] > 200 and pixel[1] < 100 and pixel[2] < 100:
-                    alertWindow(win32gui.FindWindow(None, currentWindow), "HP LOW", alertPosition, windowSize)
+                    alertWindow(win32gui.FindWindow(None, currentWindow), "HP LOW", alertPosition, windowSize, MAJOR_ALERT)
                     alerted = True
                     break
             if alerted:
@@ -174,7 +181,7 @@ while True:
             for y in range(0, prayer.size[1]):
                 pixel = prayer.pixel(x, y)
                 if pixel[0] > 200 and pixel[1] < 100 and pixel[2] < 100:
-                    alertWindow(win32gui.FindWindow(None, currentWindow), "PRAYER LOW", alertPosition, windowSize)
+                    alertWindow(win32gui.FindWindow(None, currentWindow), "PRAYER LOW", alertPosition, windowSize, MINOR_ALERT)
                     alerted = True
                     break
             if alerted:
