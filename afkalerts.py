@@ -2,7 +2,7 @@ from python_imagesearch.imagesearch import region_grabber
 import tkinter as tk
 import win32gui
 import time
-from PIL import Image # Only used if debugging is on to take screenshot of scanned regions
+from PIL import Image, ImageEnhance # Only used if debugging is on to take screenshot of scanned regions
 import random
 from playsound import playsound # Make sure you're using version 1.2.2 or it'll error out
 import pytesseract
@@ -14,12 +14,12 @@ SCAN_INTERVAL = 0.1
 # How many iterations to wait between checking HP and Prayer. Should be at least 1, but can be anything.
 ITERATIONS_BETWEEN_HPPRAY_CHECK = 5
 # How many iterations to wait between checking Chat. This is slightly more intensive than HP and Prayer, so it should be higher.
-ITERATIONS_BETWEEN_CHAT_CHECK = 60
+ITERATIONS_BETWEEN_CHAT_CHECK = 30
 
 # If debugging is on, it will only do the first scan and print out some results and take screenshots of scanned regions before exiting
-DEBUGGING = True
+DEBUGGING = False
 # How many seconds before printing the "Running for x minutes." message
-TIME_BETWEEN_PRINTS = 60
+TIME_BETWEEN_PRINTS = 300
 # How long to keep the alert visible, in ms
 ALERT_DURATION = 750
 # Default window name
@@ -27,6 +27,8 @@ DEFAULT_WINDOW_NAME = "718/925"
 # Audio files. These WILL play at whatever volume your python console is set to, so be careful.
 MAJOR_ALERT = "major_alert.mp3"
 MINOR_ALERT = "minor_alert.mp3"
+CHAT_ALERT = "chat.mp3"
+
 # A dictionary of the alert types and their responses
 ALERTS = {
     "Oh dear, you are dead!" : "YOU DIED",
@@ -35,7 +37,7 @@ ALERTS.update(CUSTOM_ALERTS)
 
 # This is the function that will always be called if an alert is detected. It's kinda janky but works for our purposes.
 # Would be fantastic to have it run on a separate thread, based on what I've read? Unsure how to implement that currently.
-def alertWindow(hwnd, alert = "", position=(0, 0), windowSize=(700, 700), alert_audio=MAJOR_ALERT):    
+def alertWindow(hwnd, alert = "", position=(0, 0), windowSize=(700, 700), alert_audio=MAJOR_ALERT, duration=ALERT_DURATION):    
     # Create a new window
     window = tk.Tk()
     window.title(alert)
@@ -86,13 +88,13 @@ def alertWindow(hwnd, alert = "", position=(0, 0), windowSize=(700, 700), alert_
         playsound(alert_audio, block=False)
 
     # Run the window loop for 500 ms
-    window.after(ALERT_DURATION, window.destroy)
+    window.after(duration, window.destroy)
     window.mainloop()
 
 
     print("Alerted " + alert + " for window " + str(hwnd), flush=True)
 
-def checkHPPray(windowPos, currentWindow, i):
+def checkHPPray(windowPos, currentWindow, i, alertPosition):
     # Grab the regions of the screen that we want to check. These are hardcoded.
     hp = region_grabber((windowPos[2] - 225, windowPos[1] + 82, windowPos[2] - 195, windowPos[1] + 98))
     prayer = region_grabber((windowPos[2] - 230, windowPos[1] + 118, windowPos[2] - 203, windowPos[1] + 132))
@@ -119,22 +121,28 @@ def checkHPPray(windowPos, currentWindow, i):
 
     return False
 
-def checkChat(windowPos, currentWindow, i):
+def checkChat(windowPos, currentWindow, i, alertPosition):
     startTime = time.time()
-    # Grab the bottom left corner of the window in a 550x150 region
-    chatBox = region_grabber((windowPos[0] + 5, windowPos[3] - 150, windowPos[0] + 555, windowPos[3] - 5))
+    # Grab the bottom left corner of the window
+    chatBox = region_grabber((windowPos[0] + 15, windowPos[3] - 175, windowPos[0] + 505, windowPos[3] - 56))
+    image = Image.frombytes('RGB', chatBox.size, chatBox.bgra, 'raw', 'BGRX')
+    # Double its size
+    image = image.resize((image.size[0] * 3, image.size[1] * 3))
+    # Enhance the image to make it easier to read
+    image = ImageEnhance.Contrast(image).enhance(1.33)
+    image = ImageEnhance.Sharpness(image).enhance(1.33)
     if DEBUGGING:
-        Image.frombytes('RGB', chatBox.size, chatBox.bgra, 'raw', 'BGRX').save("debug/chatBox" + str(i) + ".png")
+        image.save("debug/chatBox" + str(i) + ".png")
 
-    # Use pytesseract to convert the image to text
-    chatText = pytesseract.image_to_string(chatBox)
+    # Use pytesseract to convert the image to text.
+    chatText = pytesseract.image_to_string(image)
     if DEBUGGING:
         print(chatText, flush=True)
     # Check if the text is a near match to any of the alerts
     for alert in ALERTS:
         # If custom_alerts.py has a validCheck function, use that to determine if the alert is valid
             if customValidCheck(chatText, alert):
-                alertWindow(win32gui.FindWindow(None, currentWindow), ALERTS[alert], alertPosition, windowSize, MAJOR_ALERT)
+                alertWindow(win32gui.FindWindow(None, currentWindow), ALERTS[alert], alertPosition, windowSize, CHAT_ALERT, 5000)
                 return True
 
     # Print how long it took to execute
@@ -216,9 +224,11 @@ while True:
             continue
         
         if (iteration % ITERATIONS_BETWEEN_HPPRAY_CHECK) == 0:
-            checkHPPray(windowPos, currentWindow, i)
+            # print("Checking HP and Prayer for window " + str(i), flush=True)
+            checkHPPray(windowPos, currentWindow, i, alertPosition)
         if (iteration % ITERATIONS_BETWEEN_CHAT_CHECK) == 0:
-            checkChat(windowPos, currentWindow, i)
+            # print("Checking chat for window " + str(i), flush=True)
+            checkChat(windowPos, currentWindow, i, alertPosition)
 
         iteration += 1
                 
