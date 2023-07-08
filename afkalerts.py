@@ -5,9 +5,15 @@ import time
 from PIL import Image # Only used if debugging is on to take screenshot of scanned regions
 import random
 from playsound import playsound # Make sure you're using version 1.2.2 or it'll error out
+import pytesseract
 
 # How often to scan the windows, in seconds. Should probably be above 0.05 but can otherwise be anything.
 SCAN_INTERVAL = 0.1
+# How many iterations to wait between checking HP and Prayer. Should be at least 1, but can be anything.
+ITERATIONS_BETWEEN_HPPRAY_CHECK = 5
+# How many iterations to wait between checking Chat. This is slightly more intensive than HP and Prayer, so it should be higher.
+ITERATIONS_BETWEEN_CHAT_CHECK = 60
+
 # If debugging is on, it will only do the first scan and print out some results and take screenshots of scanned regions before exiting
 DEBUGGING = False
 # How many seconds before printing the "Running for x minutes." message
@@ -19,6 +25,10 @@ DEFAULT_WINDOW_NAME = "718/925"
 # Audio files. These WILL play at whatever volume your python console is set to, so be careful.
 MAJOR_ALERT = "major_alert.mp3"
 MINOR_ALERT = "minor_alert.mp3"
+# A dictionary of the alert types and their responses
+ALERTS = {
+    "Oh dear, you are dead!" : "YOU DIED",
+}
 
 # This is the function that will always be called if an alert is detected. It's kinda janky but works for our purposes.
 # Would be fantastic to have it run on a separate thread, based on what I've read? Unsure how to implement that currently.
@@ -79,6 +89,51 @@ def alertWindow(hwnd, alert = "", position=(0, 0), windowSize=(700, 700), alert_
 
     print("Alerted " + alert + " for window " + str(hwnd), flush=True)
 
+def checkHPPray(windowPos, currentWindow, i):
+    # Grab the regions of the screen that we want to check. These are hardcoded.
+    hp = region_grabber((windowPos[2] - 225, windowPos[1] + 82, windowPos[2] - 195, windowPos[1] + 98))
+    prayer = region_grabber((windowPos[2] - 230, windowPos[1] + 118, windowPos[2] - 203, windowPos[1] + 132))
+    # Use Pillow to convert the Screenshot of the regions into a file for debugging
+    if DEBUGGING:
+        Image.frombytes('RGB', hp.size, hp.bgra, 'raw', 'BGRX').save("debug/hp" + str(i) + ".png")
+        Image.frombytes('RGB', prayer.size, prayer.bgra, 'raw', 'BGRX').save("debug/prayer" + str(i) + ".png")
+    # Iterate through all the pixels in hp and prayer to determine if there are any red
+    # While the functionality is the same, I'm keeping them separate in case I want to add more alerts later that do something else
+    for x in range(0, hp.size[0]):
+        for y in range(0, hp.size[1]):
+            # Get the pixel's RGB value
+            pixel = hp.pixel(x, y)
+            # If the pixel is red, alert
+            if pixel[0] > 200 and pixel[1] < 100 and pixel[2] < 100:
+                alertWindow(win32gui.FindWindow(None, currentWindow), "HP LOW", alertPosition, windowSize, MAJOR_ALERT)
+                return True
+    for x in range(0, prayer.size[0]):
+        for y in range(0, prayer.size[1]):
+            pixel = prayer.pixel(x, y)
+            if pixel[0] > 200 and pixel[1] < 100 and pixel[2] < 100:
+                alertWindow(win32gui.FindWindow(None, currentWindow), "PRAYER LOW", alertPosition, windowSize, MINOR_ALERT)
+                return True
+
+    return False
+
+def checkChat(windowPos, currentWindow, i):
+    # Grab the bottom left corner of the window in a 550x150 region
+    chatBox = region_grabber((windowPos[0] + 5, windowPos[3] - 150, windowPos[0] + 555, windowPos[3] - 5))
+    if DEBUGGING:
+        Image.frombytes('RGB', chatBox.size, chatBox.bgra, 'raw', 'BGRX').save("debug/chatBox" + str(i) + ".png")
+
+    # Use pytesseract to convert the image to text
+    chatText = pytesseract.image_to_string(chatBox)
+    if DEBUGGING:
+        print(chatText, flush=True)
+    # Check the text for any alerts
+    for alert in ALERTS:
+        if alert in chatText:
+            alertWindow(win32gui.FindWindow(None, currentWindow), ALERTS[alert], alertPosition, windowSize, MAJOR_ALERT)
+            return True
+
+    return False
+
 # Print that we're running
 print("AFK Alerts has started!", flush=True)
 
@@ -117,6 +172,7 @@ if len(windowList) == 0:
 timeElapsed = 0
 startTime = time.time()
 minutes = 0
+iteration = 0
 
 # The actual program loop
 while True:
@@ -150,42 +206,12 @@ while True:
         if timeSinceLastFocused[i] - time.time() > 240:
             alertWindow(win32gui.FindWindow(None, currentWindow), "AFK", alertPosition, windowSize, MINOR_ALERT)
             continue
+        
+        if (iteration % ITERATIONS_BETWEEN_HPPRAY_CHECK) == 0:
+            if checkHPPray(windowPos, currentWindow, i):
+                continue
 
-        # Grab the regions of the screen that we want to check. These are hardcoded.
-        # In the future I could make it detect an image match to automatically select the regions, but that's a lot of work I don't want to bother with.
-        hp = region_grabber((windowPos[2] - 225, windowPos[1] + 82, windowPos[2] - 195, windowPos[1] + 98))
-        prayer = region_grabber((windowPos[2] - 230, windowPos[1] + 118, windowPos[2] - 203, windowPos[1] + 132))
-
-        # Use Pillow to convert the Screenshot of the regions into a file for debugging
-        if DEBUGGING:
-            windowRegion = region_grabber(windowPos)
-            Image.frombytes('RGB', hp.size, hp.bgra, 'raw', 'BGRX').save("debug/hp" + str(i) + ".png")
-            Image.frombytes('RGB', prayer.size, prayer.bgra, 'raw', 'BGRX').save("debug/prayer" + str(i) + ".png")
-            Image.frombytes('RGB', windowRegion.size, windowRegion.bgra, 'raw', 'BGRX').save("debug/windowRegion" + str(i) + ".png")
-
-        alerted = False
-        # Iterate through all the pixels in hp and prayer to determine if there are any red
-        # While the functionality is the same, I'm keeping them separate in case I want to add more alerts later that do something else
-        for x in range(0, hp.size[0]):
-            for y in range(0, hp.size[1]):
-                # Get the pixel's RGB value
-                pixel = hp.pixel(x, y)
-                # If the pixel is red, alert
-                if pixel[0] > 200 and pixel[1] < 100 and pixel[2] < 100:
-                    alertWindow(win32gui.FindWindow(None, currentWindow), "HP LOW", alertPosition, windowSize, MAJOR_ALERT)
-                    alerted = True
-                    break
-            if alerted:
-                break
-        for x in range(0, prayer.size[0]):
-            for y in range(0, prayer.size[1]):
-                pixel = prayer.pixel(x, y)
-                if pixel[0] > 200 and pixel[1] < 100 and pixel[2] < 100:
-                    alertWindow(win32gui.FindWindow(None, currentWindow), "PRAYER LOW", alertPosition, windowSize, MINOR_ALERT)
-                    alerted = True
-                    break
-            if alerted:
-                break
+        iteration += 1
                 
     if DEBUGGING:
         exit()
