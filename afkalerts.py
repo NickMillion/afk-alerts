@@ -6,6 +6,8 @@ from PIL import Image # Only used if debugging is on to take screenshot of scann
 import random
 from playsound import playsound # Make sure you're using version 1.2.2 or it'll error out
 import pytesseract
+from custom_alerts import CUSTOM_ALERTS
+from custom_alerts import customValidCheck
 
 # How often to scan the windows, in seconds. Should probably be above 0.05 but can otherwise be anything.
 SCAN_INTERVAL = 0.1
@@ -15,7 +17,7 @@ ITERATIONS_BETWEEN_HPPRAY_CHECK = 5
 ITERATIONS_BETWEEN_CHAT_CHECK = 60
 
 # If debugging is on, it will only do the first scan and print out some results and take screenshots of scanned regions before exiting
-DEBUGGING = False
+DEBUGGING = True
 # How many seconds before printing the "Running for x minutes." message
 TIME_BETWEEN_PRINTS = 60
 # How long to keep the alert visible, in ms
@@ -29,6 +31,7 @@ MINOR_ALERT = "minor_alert.mp3"
 ALERTS = {
     "Oh dear, you are dead!" : "YOU DIED",
 }
+ALERTS.update(CUSTOM_ALERTS)
 
 # This is the function that will always be called if an alert is detected. It's kinda janky but works for our purposes.
 # Would be fantastic to have it run on a separate thread, based on what I've read? Unsure how to implement that currently.
@@ -117,6 +120,7 @@ def checkHPPray(windowPos, currentWindow, i):
     return False
 
 def checkChat(windowPos, currentWindow, i):
+    startTime = time.time()
     # Grab the bottom left corner of the window in a 550x150 region
     chatBox = region_grabber((windowPos[0] + 5, windowPos[3] - 150, windowPos[0] + 555, windowPos[3] - 5))
     if DEBUGGING:
@@ -126,12 +130,16 @@ def checkChat(windowPos, currentWindow, i):
     chatText = pytesseract.image_to_string(chatBox)
     if DEBUGGING:
         print(chatText, flush=True)
-    # Check the text for any alerts
+    # Check if the text is a near match to any of the alerts
     for alert in ALERTS:
-        if alert in chatText:
-            alertWindow(win32gui.FindWindow(None, currentWindow), ALERTS[alert], alertPosition, windowSize, MAJOR_ALERT)
-            return True
+        # If custom_alerts.py has a validCheck function, use that to determine if the alert is valid
+            if customValidCheck(chatText, alert):
+                alertWindow(win32gui.FindWindow(None, currentWindow), ALERTS[alert], alertPosition, windowSize, MAJOR_ALERT)
+                return True
 
+    # Print how long it took to execute
+    if DEBUGGING:
+        print("Took " + str(time.time() - startTime) + " seconds to execute.", flush=True)
     return False
 
 # Print that we're running
@@ -208,8 +216,9 @@ while True:
             continue
         
         if (iteration % ITERATIONS_BETWEEN_HPPRAY_CHECK) == 0:
-            if checkHPPray(windowPos, currentWindow, i):
-                continue
+            checkHPPray(windowPos, currentWindow, i)
+        if (iteration % ITERATIONS_BETWEEN_CHAT_CHECK) == 0:
+            checkChat(windowPos, currentWindow, i)
 
         iteration += 1
                 
