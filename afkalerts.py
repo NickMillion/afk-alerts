@@ -2,7 +2,7 @@ from python_imagesearch.imagesearch import region_grabber
 import tkinter as tk
 import win32gui
 import time
-from PIL import Image, ImageEnhance, ImageFilter # Only used if debugging is on to take screenshot of scanned regions
+from PIL import Image, ImageEnhance # Only used if debugging is on to take screenshot of scanned regions
 import random
 from playsound import playsound # Make sure you're using version 1.2.2 or it'll error out
 import pytesseract
