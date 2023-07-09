@@ -2,19 +2,21 @@ from python_imagesearch.imagesearch import region_grabber
 import tkinter as tk
 import win32gui
 import time
-from PIL import Image, ImageEnhance # Only used if debugging is on to take screenshot of scanned regions
+from PIL import Image, ImageEnhance, ImageFilter # Only used if debugging is on to take screenshot of scanned regions
 import random
 from playsound import playsound # Make sure you're using version 1.2.2 or it'll error out
 import pytesseract
 from custom_alerts import CUSTOM_ALERTS
 from custom_alerts import customValidCheck
+import re
+from spellchecker import SpellChecker
 
 # How often to scan the windows, in seconds. Should probably be above 0.05 but can otherwise be anything.
 SCAN_INTERVAL = 0.1
 # How many iterations to wait between checking HP and Prayer. Should be at least 1, but can be anything.
 ITERATIONS_BETWEEN_HPPRAY_CHECK = 5
 # How many iterations to wait between checking Chat. This is slightly more intensive than HP and Prayer, so it should be higher.
-ITERATIONS_BETWEEN_CHAT_CHECK = 30
+ITERATIONS_BETWEEN_CHAT_CHECK = 15
 
 # If debugging is on, it will only do the first scan and print out some results and take screenshots of scanned regions before exiting
 DEBUGGING = False
@@ -35,6 +37,8 @@ ALERTS = {
 }
 ALERTS.update(CUSTOM_ALERTS)
 
+spell = SpellChecker()
+
 # This is the function that will always be called if an alert is detected. It's kinda janky but works for our purposes.
 # Would be fantastic to have it run on a separate thread, based on what I've read? Unsure how to implement that currently.
 def alertWindow(hwnd, alert = "", position=(0, 0), windowSize=(700, 700), alert_audio=MAJOR_ALERT, duration=ALERT_DURATION):    
@@ -53,7 +57,8 @@ def alertWindow(hwnd, alert = "", position=(0, 0), windowSize=(700, 700), alert_
 
     # Set the window's position
     window.geometry("+%d+%d" % (position[0], position[1]))
-    window.geometry(str(windowSize[0]) + "x" + str(windowSize[1]))
+    # Size should be 75% of the window's size
+    windowSize = (int(windowSize[0] * 0.75), int(windowSize[1] * 0.75))
     # Make the window always on top
     window.attributes("-topmost", True)
     # 50% opacity
@@ -129,13 +134,34 @@ def checkChat(windowPos, currentWindow, i, alertPosition):
     # Double its size
     image = image.resize((image.size[0] * 3, image.size[1] * 3))
     # Enhance the image to make it easier to read
-    image = ImageEnhance.Contrast(image).enhance(1.33)
-    image = ImageEnhance.Sharpness(image).enhance(1.33)
+    image = ImageEnhance.Brightness(image).enhance(0.9)
+    image = ImageEnhance.Color(image).enhance(0.1)
+    image = ImageEnhance.Contrast(image).enhance(3.35)
+    image = ImageEnhance.Brightness(image).enhance(1.1)
+    image = ImageEnhance.Contrast(image).enhance(1.1)
+    image = ImageEnhance.Sharpness(image).enhance(1.2)
     if DEBUGGING:
         image.save("debug/chatBox" + str(i) + ".png")
 
     # Use pytesseract to convert the image to text.
     chatText = pytesseract.image_to_string(image)
+    chatText = re.sub(r'[^a-zA-Z0-9\s]', '', chatText)
+
+    # Spellcheck the text for any non-capitalized words
+    misspelled = spell.unknown(chatText.split())
+    for word in misspelled:
+        # if the word is capitalized, it's probably proper, so skip it
+        if word[0].isupper():
+            continue
+        # Get the one `most likely` answer
+        corrected = spell.correction(word)
+        # If it's not None, replace the word with the corrected word
+        if corrected != None and corrected != "" and corrected != word:
+            if DEBUGGING:
+                print("Correcting " + word + " to " + str(corrected), flush=True)
+            chatText = chatText.replace(word, corrected)
+
+
     if DEBUGGING:
         print(chatText, flush=True)
     # Check if the text is a near match to any of the alerts
@@ -144,7 +170,7 @@ def checkChat(windowPos, currentWindow, i, alertPosition):
             if customValidCheck(chatText, alert):
                 alertWindow(win32gui.FindWindow(None, currentWindow), ALERTS[alert], alertPosition, windowSize, CHAT_ALERT, 5000)
                 return True
-
+            
     # Print how long it took to execute
     if DEBUGGING:
         print("Took " + str(time.time() - startTime) + " seconds to execute.", flush=True)
