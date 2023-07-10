@@ -33,11 +33,24 @@ CHAT_ALERT = "chat.mp3"
 
 # A dictionary of the alert types and their responses
 ALERTS = {
-    "Oh dear, you are dead!" : "YOU DIED",
+    "Oh dear, you are dead" : "YOU DIED",
 }
 ALERTS.update(CUSTOM_ALERTS)
 
+
+# Initializing the spell checker
 spell = SpellChecker()
+# Make a string of all the keys in the ALERTS dictionary to be used by the spell checker
+ALERTS_KEYS = ""
+for key in ALERTS:
+    ALERTS_KEYS += key + " "
+# Add all the unknown words in the ALERTS_KEYS string to the spell checker
+unknownKeys = spell.unknown(ALERTS_KEYS.split())
+print("Adding " + str(len(unknownKeys)) + " unknown words to the spell checker: " + str(unknownKeys), flush=True)
+spell.word_frequency.load_words(unknownKeys)
+
+# List of recent alerts and when they triggered. This is used to prevent spamming the same alert over and over.
+recentAlerts = {}
 
 # This is the function that will always be called if an alert is detected. It's kinda janky but works for our purposes.
 # Would be fantastic to have it run on a separate thread, based on what I've read? Unsure how to implement that currently.
@@ -167,9 +180,16 @@ def checkChat(windowPos, currentWindow, i, alertPosition):
     # Check if the text is a near match to any of the alerts
     for alert in ALERTS:
         # If custom_alerts.py has a validCheck function, use that to determine if the alert is valid
-            if customValidCheck(chatText, alert):
-                alertWindow(win32gui.FindWindow(None, currentWindow), ALERTS[alert], alertPosition, windowSize, CHAT_ALERT, 5000)
-                return True
+        if customValidCheck(chatText, alert):
+            # If the alert is in recent alerts and it's been less than 60 seconds, skip it
+            if alert in recentAlerts and time.time() - recentAlerts[alert] < 60:
+                # Print that we're skipping it
+                # print("Skipping " + alert + " for window " + str(i) + " because it's in recent alerts.", flush=True)
+                continue
+            # Otherwise, add it to recent alerts and alert
+            recentAlerts[alert] = time.time()
+            alertWindow(win32gui.FindWindow(None, currentWindow), ALERTS[alert], alertPosition, windowSize, CHAT_ALERT, 10000)
+            return True
             
     # Print how long it took to execute
     if DEBUGGING:
