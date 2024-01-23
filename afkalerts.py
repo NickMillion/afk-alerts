@@ -11,6 +11,9 @@ from custom_alerts import customValidCheck
 import re
 from spellchecker import SpellChecker
 
+# This has to point to your tesseract executable
+pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+
 # How often to scan the windows, in seconds. Should probably be above 0.05 but can otherwise be anything.
 SCAN_INTERVAL = 0.1
 # How many iterations to wait between checking HP and Prayer. Should be at least 1, but can be anything.
@@ -181,14 +184,14 @@ def checkChat(windowPos, currentWindow, i, alertPosition):
     for alert in ALERTS:
         # If custom_alerts.py has a validCheck function, use that to determine if the alert is valid
         if customValidCheck(chatText, alert):
-            # If the alert is in recent alerts and it's been less than 60 seconds, skip it
-            if alert in recentAlerts and time.time() - recentAlerts[alert] < 60:
+            # If the alert is in recent alerts and it's been less than X seconds, skip it
+            if alert in recentAlerts and time.time() - recentAlerts[alert] < 120:
                 # Print that we're skipping it
                 # print("Skipping " + alert + " for window " + str(i) + " because it's in recent alerts.", flush=True)
                 continue
             # Otherwise, add it to recent alerts and alert
             recentAlerts[alert] = time.time()
-            alertWindow(win32gui.FindWindow(None, currentWindow), ALERTS[alert], alertPosition, windowSize, CHAT_ALERT, 10000)
+            alertWindow(win32gui.FindWindow(None, currentWindow), ALERTS[alert], alertPosition, windowSize, CHAT_ALERT, 12000)
             return True
             
     # Print how long it took to execute
@@ -242,7 +245,7 @@ while True:
     timeElapsed = time.time() - startTime
     # If it's been more than 60 seconds, print that we're still running
     if timeElapsed > TIME_BETWEEN_PRINTS:
-        minutes += 1
+        minutes += (TIME_BETWEEN_PRINTS / 60)
         print("Running for " + str(minutes) + " minutes.", flush=True)
         startTime = time.time()
 
