@@ -149,78 +149,51 @@ def checkHPPray(windowPos, currentWindow, i, alertPosition):
 
     return False
 
-def checkChat(windowPos, currentWindow, i, alertPosition):
-    startTime = time.time()
-    # Grab the bottom left corner of the window
-    chatBox = region_grabber((windowPos[0] + 15, windowPos[3] - 175, windowPos[0] + 505, windowPos[3] - 56))
-    image = Image.frombytes('RGB', chatBox.size, chatBox.bgra, 'raw', 'BGRX')
-    # Double its size
-    image = image.resize((image.size[0] * 3, image.size[1] * 3))
-    # Create an array of 3 copies of the image
-    images = [copy.deepcopy(image), copy.deepcopy(image), copy.deepcopy(image)]
-    # We are going to apply different filters to each image to try to get the best result
-    # Index 0 - Original image, unchanged
-    # Index 1 - First iteration of filters
-    firstImage = images[1]
-    firstImage = ImageEnhance.Brightness(firstImage).enhance(0.9)
-    firstImage = ImageEnhance.Color(firstImage).enhance(0.1)
-    firstImage = ImageEnhance.Contrast(firstImage).enhance(3.35)
-    firstImage = ImageEnhance.Brightness(firstImage).enhance(1.1)
-    firstImage = ImageEnhance.Contrast(firstImage).enhance(1.1)
-    firstImage = ImageEnhance.Sharpness(firstImage).enhance(0.7)
-    images[1] = firstImage
-    # Index 2 - Very aggressive filters to make white text stand out
-    secondImage = images[2]
-    secondImage = ImageEnhance.Sharpness(secondImage).enhance(0)
-    secondImage = ImageEnhance.Color(secondImage).enhance(2)
-    secondImage = ImageEnhance.Contrast(secondImage).enhance(2)
-    secondImage = ImageEnhance.Brightness(secondImage).enhance(0.05)
-    secondImage = ImageEnhance.Contrast(secondImage).enhance(4)
-    secondImage = ImageEnhance.Sharpness(secondImage).enhance(2)
-    secondImage = ImageEnhance.Brightness(secondImage).enhance(2)
-    secondImage = ImageEnhance.Contrast(secondImage).enhance(2)
-    secondImage = ImageEnhance.Color(secondImage).enhance(0)
-    secondImage = ImageEnhance.Sharpness(secondImage).enhance(0)
-    secondImage = ImageEnhance.Contrast(secondImage).enhance(1.75)
-    secondImage = ImageEnhance.Brightness(secondImage).enhance(1.75)
-    images[2] = secondImage
-    if DEBUGGING:
-        imageHere = images[0]
-        imageHere.save("debug/chatBox-0-" + str(i) + ".png")
-        imageHere = images[1]
-        imageHere.save("debug/chatBox-1-" + str(i) + ".png")
-        imageHere = images[2]
-        imageHere.save("debug/chatBox-2-" + str(i) + ".png")
-    
-    # Iterate through all the images and convert them to text
-    concatText = ""
-    for imageHere in images:
-        # Use pytesseract to convert the image to text.
-        chatText = pytesseract.image_to_string(imageHere)
-        chatText = re.sub(r'[^a-zA-Z0-9\s]', '', chatText)
+def checkImage(image, currentWindow, alertPosition):
+    # Use pytesseract to convert the image to text.
+    chatText = pytesseract.image_to_string(image)
+    chatText = re.sub(r'[^a-zA-Z0-9\s]', '', chatText)
 
-        # Spellcheck the text for any non-capitalized words
-        misspelled = spell.unknown(chatText.split())
-        for word in misspelled:
-            # if the word is capitalized, it's probably proper, so skip it
-            if word[0].isupper():
-                continue
+    # Split the text into words
+    words = chatText.split()
+
+    # Create a list to hold the corrected words
+    corrected_words = []
+
+    # Get the set of unknown words
+    unknown_words = spell.unknown(words)
+
+    for word in words:
+        # if the word is capitalized, it's probably proper, so skip it
+        if word[0].isupper():
+            corrected_words.append(word)
+            continue
+
+        # If the word is unknown to the spell checker
+        if word in unknown_words:
             # Get the one `most likely` answer
             corrected = spell.correction(word)
-            # If it's not None, replace the word with the corrected word
-            if corrected != None and corrected != "" and corrected != word:
+
+            # If it's not None and not empty, replace the word with the corrected word
+            if corrected and corrected != word:
                 if DEBUGGING:
-                    print("Correcting " + word + " to " + str(corrected), flush=True)
-                chatText = chatText.replace(word, corrected)
-        concatText += chatText + " ||| "
+                    print(f"Correcting {word} to {corrected}", flush=True)
+                corrected_words.append(corrected)
+            else:
+                corrected_words.append(word)
+        else:
+            corrected_words.append(word)
 
-
+    # Join the corrected words back into a string
+    chatText = ' '.join(corrected_words)
+    
+    # We handle the alerts here so if there's a hit, we can skip the rest of the images
     if DEBUGGING:
-        print(concatText, flush=True)
-    # Check if the text is a near match to any of the alerts
+        print(chatText, flush=True)
+    # Check if the text is a near match to any of the alerts. This is not performance intensive.
     for alert in ALERTS:
         # If custom_alerts.py has a validCheck function, use that to determine if the alert is valid
-        if customValidCheck(concatText, alert):
+        if customValidCheck(chatText, alert):
             # If the alert is in recent alerts and it's been less than X seconds, skip it
             if alert in recentAlerts and time.time() - recentAlerts[alert] < REPEAT_ALERT_TIME:
                 # Print that we're skipping it
@@ -230,8 +203,65 @@ def checkChat(windowPos, currentWindow, i, alertPosition):
             recentAlerts[alert] = time.time()
             alertWindow(win32gui.FindWindow(None, currentWindow), ALERTS[alert], alertPosition, windowSize, CHAT_ALERT, 12000)
             return True
-            
-    # Print how long it took to execute
+    return False
+
+def checkChat(windowPos, currentWindow, i, alertPosition):
+    startTime = time.time()
+    # Grab the bottom left corner of the window
+    chatBox = region_grabber((windowPos[0] + 15, windowPos[3] - 175, windowPos[0] + 505, windowPos[3] - 56))
+    image = Image.frombytes('RGB', chatBox.size, chatBox.bgra, 'raw', 'BGRX')
+    # Double its size
+    image = image.resize((image.size[0] * 2, image.size[1] * 2))
+
+    # It takes about a second to enhance and then check the image, so we do the most to least aggressive filters first
+
+    aggressiveFiltered = copy.deepcopy(image)
+    aggressiveFiltered = ImageEnhance.Sharpness(aggressiveFiltered).enhance(0)
+    aggressiveFiltered = ImageEnhance.Color(aggressiveFiltered).enhance(2)
+    aggressiveFiltered = ImageEnhance.Contrast(aggressiveFiltered).enhance(2)
+    aggressiveFiltered = ImageEnhance.Brightness(aggressiveFiltered).enhance(0.05)
+    aggressiveFiltered = ImageEnhance.Contrast(aggressiveFiltered).enhance(4)
+    aggressiveFiltered = ImageEnhance.Sharpness(aggressiveFiltered).enhance(2)
+    aggressiveFiltered = ImageEnhance.Brightness(aggressiveFiltered).enhance(2)
+    aggressiveFiltered = ImageEnhance.Contrast(aggressiveFiltered).enhance(2)
+    aggressiveFiltered = ImageEnhance.Color(aggressiveFiltered).enhance(0)
+    aggressiveFiltered = ImageEnhance.Sharpness(aggressiveFiltered).enhance(0)
+    aggressiveFiltered = ImageEnhance.Contrast(aggressiveFiltered).enhance(1.75)
+    aggressiveFiltered = ImageEnhance.Brightness(aggressiveFiltered).enhance(1.75)
+
+    if DEBUGGING:
+        aggressiveFiltered.save("debug/chatBox-aggressive-" + str(i) + ".png")
+
+    success = checkImage(aggressiveFiltered, currentWindow, alertPosition)
+    if success:
+        if DEBUGGING:
+            print("Took " + str(time.time() - startTime) + " seconds to execute.", flush=True)
+        return True
+    
+    lessAggressiveFiltered = copy.deepcopy(image)
+    lessAggressiveFiltered = ImageEnhance.Brightness(lessAggressiveFiltered).enhance(0.9)
+    lessAggressiveFiltered = ImageEnhance.Color(lessAggressiveFiltered).enhance(0.1)
+    lessAggressiveFiltered = ImageEnhance.Contrast(lessAggressiveFiltered).enhance(3.35)
+    lessAggressiveFiltered = ImageEnhance.Brightness(lessAggressiveFiltered).enhance(1.1)
+    lessAggressiveFiltered = ImageEnhance.Contrast(lessAggressiveFiltered).enhance(1.1)
+    lessAggressiveFiltered = ImageEnhance.Sharpness(lessAggressiveFiltered).enhance(0.7)
+
+    if DEBUGGING:
+        lessAggressiveFiltered.save("debug/chatBox-lessAggressive-" + str(i) + ".png")
+
+    success = checkImage(lessAggressiveFiltered, currentWindow, alertPosition)
+    if success:
+        if DEBUGGING:
+            print("Took " + str(time.time() - startTime) + " seconds to execute.", flush=True)
+        return True
+
+    # Check the original image last
+    success = checkImage(image, currentWindow, alertPosition)
+    if success:
+        if DEBUGGING:
+            print("Took " + str(time.time() - startTime) + " seconds to execute.", flush=True)
+        return True
+
     if DEBUGGING:
         print("Took " + str(time.time() - startTime) + " seconds to execute.", flush=True)
     return False
