@@ -10,6 +10,7 @@ from custom_alerts import CUSTOM_ALERTS
 from custom_alerts import customValidCheck
 import re
 from spellchecker import SpellChecker
+import copy
 
 # This has to point to your tesseract executable
 pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
@@ -27,6 +28,8 @@ DEBUGGING = False
 TIME_BETWEEN_PRINTS = 300
 # How long to keep the alert visible, in ms
 ALERT_DURATION = 750
+# Time between repeat alerts, in seconds
+REPEAT_ALERT_TIME = 120
 # Default window name
 DEFAULT_WINDOW_NAME = "718/925"
 # Audio files. These WILL play at whatever volume your python console is set to, so be careful.
@@ -40,6 +43,10 @@ ALERTS = {
 }
 ALERTS.update(CUSTOM_ALERTS)
 
+print("The program will scan every " + str(SCAN_INTERVAL) + " seconds.", flush=True)
+print("It will check HP and Prayer every " + str(ITERATIONS_BETWEEN_HPPRAY_CHECK * SCAN_INTERVAL) + " seconds.", flush=True)
+print("It will check chat every " + str(ITERATIONS_BETWEEN_CHAT_CHECK * SCAN_INTERVAL) + " seconds.", flush=True)
+print("Note: these assume a 0ms execution time for the scanning process, so add however long the execution takes to the above.", flush=True)
 
 # Initializing the spell checker
 spell = SpellChecker()
@@ -149,43 +156,73 @@ def checkChat(windowPos, currentWindow, i, alertPosition):
     image = Image.frombytes('RGB', chatBox.size, chatBox.bgra, 'raw', 'BGRX')
     # Double its size
     image = image.resize((image.size[0] * 3, image.size[1] * 3))
-    # Enhance the image to make it easier to read
-    image = ImageEnhance.Brightness(image).enhance(0.9)
-    image = ImageEnhance.Color(image).enhance(0.1)
-    image = ImageEnhance.Contrast(image).enhance(3.35)
-    image = ImageEnhance.Brightness(image).enhance(1.1)
-    image = ImageEnhance.Contrast(image).enhance(1.1)
-    image = ImageEnhance.Sharpness(image).enhance(1.2)
+    # Create an array of 3 copies of the image
+    images = [copy.deepcopy(image), copy.deepcopy(image), copy.deepcopy(image)]
+    # We are going to apply different filters to each image to try to get the best result
+    # Index 0 - Original image, unchanged
+    # Index 1 - First iteration of filters
+    firstImage = images[1]
+    firstImage = ImageEnhance.Brightness(firstImage).enhance(0.9)
+    firstImage = ImageEnhance.Color(firstImage).enhance(0.1)
+    firstImage = ImageEnhance.Contrast(firstImage).enhance(3.35)
+    firstImage = ImageEnhance.Brightness(firstImage).enhance(1.1)
+    firstImage = ImageEnhance.Contrast(firstImage).enhance(1.1)
+    firstImage = ImageEnhance.Sharpness(firstImage).enhance(0.7)
+    images[1] = firstImage
+    # Index 2 - Very aggressive filters to make white text stand out
+    secondImage = images[2]
+    secondImage = ImageEnhance.Sharpness(secondImage).enhance(0)
+    secondImage = ImageEnhance.Color(secondImage).enhance(2)
+    secondImage = ImageEnhance.Contrast(secondImage).enhance(2)
+    secondImage = ImageEnhance.Brightness(secondImage).enhance(0.05)
+    secondImage = ImageEnhance.Contrast(secondImage).enhance(4)
+    secondImage = ImageEnhance.Sharpness(secondImage).enhance(2)
+    secondImage = ImageEnhance.Brightness(secondImage).enhance(2)
+    secondImage = ImageEnhance.Contrast(secondImage).enhance(2)
+    secondImage = ImageEnhance.Color(secondImage).enhance(0)
+    secondImage = ImageEnhance.Sharpness(secondImage).enhance(0)
+    secondImage = ImageEnhance.Contrast(secondImage).enhance(1.75)
+    secondImage = ImageEnhance.Brightness(secondImage).enhance(1.75)
+    images[2] = secondImage
     if DEBUGGING:
-        image.save("debug/chatBox" + str(i) + ".png")
+        imageHere = images[0]
+        imageHere.save("debug/chatBox-0-" + str(i) + ".png")
+        imageHere = images[1]
+        imageHere.save("debug/chatBox-1-" + str(i) + ".png")
+        imageHere = images[2]
+        imageHere.save("debug/chatBox-2-" + str(i) + ".png")
+    
+    # Iterate through all the images and convert them to text
+    concatText = ""
+    for imageHere in images:
+        # Use pytesseract to convert the image to text.
+        chatText = pytesseract.image_to_string(imageHere)
+        chatText = re.sub(r'[^a-zA-Z0-9\s]', '', chatText)
 
-    # Use pytesseract to convert the image to text.
-    chatText = pytesseract.image_to_string(image)
-    chatText = re.sub(r'[^a-zA-Z0-9\s]', '', chatText)
-
-    # Spellcheck the text for any non-capitalized words
-    misspelled = spell.unknown(chatText.split())
-    for word in misspelled:
-        # if the word is capitalized, it's probably proper, so skip it
-        if word[0].isupper():
-            continue
-        # Get the one `most likely` answer
-        corrected = spell.correction(word)
-        # If it's not None, replace the word with the corrected word
-        if corrected != None and corrected != "" and corrected != word:
-            if DEBUGGING:
-                print("Correcting " + word + " to " + str(corrected), flush=True)
-            chatText = chatText.replace(word, corrected)
+        # Spellcheck the text for any non-capitalized words
+        misspelled = spell.unknown(chatText.split())
+        for word in misspelled:
+            # if the word is capitalized, it's probably proper, so skip it
+            if word[0].isupper():
+                continue
+            # Get the one `most likely` answer
+            corrected = spell.correction(word)
+            # If it's not None, replace the word with the corrected word
+            if corrected != None and corrected != "" and corrected != word:
+                if DEBUGGING:
+                    print("Correcting " + word + " to " + str(corrected), flush=True)
+                chatText = chatText.replace(word, corrected)
+        concatText += chatText + " ||| "
 
 
     if DEBUGGING:
-        print(chatText, flush=True)
+        print(concatText, flush=True)
     # Check if the text is a near match to any of the alerts
     for alert in ALERTS:
         # If custom_alerts.py has a validCheck function, use that to determine if the alert is valid
-        if customValidCheck(chatText, alert):
+        if customValidCheck(concatText, alert):
             # If the alert is in recent alerts and it's been less than X seconds, skip it
-            if alert in recentAlerts and time.time() - recentAlerts[alert] < 120:
+            if alert in recentAlerts and time.time() - recentAlerts[alert] < REPEAT_ALERT_TIME:
                 # Print that we're skipping it
                 # print("Skipping " + alert + " for window " + str(i) + " because it's in recent alerts.", flush=True)
                 continue
